@@ -4,7 +4,7 @@ function InfiniteBreaks:new(o)
     o = o or {} -- create object if user does not provide one
     setmetatable(o, self)
     self.__index = self
-    o.voices = o.voices or {5, 6}
+    o.voices = o.voices or {7,8}
     if #o.voices > 2 then
         o.voices = {o.voices[1], o.voices[2]}
     end
@@ -47,6 +47,7 @@ function InfiniteBreaks:new(o)
         behavior = 'trigger',
         action = function(v)
             if o.dir ~= nil then
+                print(o.dir)
                 o:load_file()
             end
         end
@@ -67,10 +68,11 @@ function InfiniteBreaks:mangle()
                 clock.sleep(1)
             else
                 clock.sync(1 / 16)
-                if math.abs(math.floor(clock.get_beats()) - clock.get_beats()) < 0.05 then
-                    if tempo ~= clock.get_tempo() or math.random() < 0.1 or self.loaded_file then
+                if math.abs(math.floor(clock.get_beats()) - clock.get_beats()) < 0.02 then
+                    if (tempo ~= clock.get_tempo()) or (math.random() < 0.05) or self.loaded_file then
+                        print("syncing")
                         self.loaded_file=nil
-                        temp = clock.get_tempo()
+                        tempo = clock.get_tempo()
                         for _, i in ipairs(self.voices) do
                             softcut.rate(i, 1.0 * self.samplerate / 48000 * clock.get_tempo() / self.bpm)
                             softcut.loop_start(i, self.start)
@@ -84,15 +86,12 @@ function InfiniteBreaks:mangle()
                     if math.random() < 0.01 then
                         print("reverse")
                         self:reverse()
-                    end
-                    -- if math.random() < 0.025 then
-                    --     self:glitch()
-                    -- end
+                    end 
                     if math.random() < 0.01 then
                         print("jump")
                         self:jump()
-                    end
-                    if math.random() < 0.1 then
+                    end 
+                    if math.random() < 0.01 then
                         print("jump and hold")
                         self:jump_and_hold()
                     end
@@ -172,7 +171,7 @@ function InfiniteBreaks:load_file(fname)
     for buf, i in ipairs(self.voices) do
         softcut.enable(i, 1)
         softcut.buffer(i, buf)
-        softcut.level(i, 1.0)
+        softcut.level(i, 0.1)
         softcut.loop(i, 1)
         softcut.loop_start(i, 260)
         softcut.loop_end(i, 261)
