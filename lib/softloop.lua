@@ -1,10 +1,12 @@
 local Softloop={}
 
+local Formatters=require 'formatters'
+
 function Softloop:new(o)
   o=o or {} -- create object if user does not provide one
   setmetatable(o,self)
   self.__index=self
-  o.voices=o.voices or {7,8}
+  o.voices=o.voices or {softcut.VOICE_COUNT-1,softcut.VOICE_COUNT}
   if #o.voices>2 then
     o.voices={o.voices[1],o.voices[2]}
   end
@@ -15,20 +17,15 @@ function Softloop:new(o)
   o.clockid=nil
 
   -- TODO: add params
-  params:add_group("SOFTLOOP",3)
+  params:add_group("SOFTLOOP",10)
   params:add_file("softloop_file","file",_path.audio)
   params:set_action("softloop_file",function(x)
     if x~=_path.audio and x~=nil then
       o:load_file(x)
     end
   end)
-  -- TODO: delete these lines
-  o.dir=_path.audio.."jungle-sounds-spliced/"
-  o.files=util.scandir(o.dir)
-  for i,f in ipairs(o.files) do
-    o.files[i]=o.dir..f
-  end
-  params:add_file("softloop_folder","folder (for rand)",_path.audio.."jungle-sounds-spliced")
+
+  params:add_file("softloop_folder","folder (for rand)",_path.audio)
   params:set_action("softloop_folder",function(x)
     if x~=_path.audio and x~=nil then
       o.dir,_,_=string.match(x,"(.-)([^\\/]-%.?([^%.\\/]*))$")
@@ -50,15 +47,65 @@ function Softloop:new(o)
       end
     end
   }
-  o:mangle()
-  o:load_file()
+  local voice_options={}
+  for i=1,softcut.VOICE_COUNT/2 do
+    table.insert(voice_options,(i*2-1).."+"..(i*2))
+  end
+  params:add_control("softloop_level","level",controlspec.new(0,2,'lin',0.01,0.2,'amp',0.01/2))
+  params:set_action("softloop_level",function(x)
+    for _,i in ipairs(o.voices) do
+      softcut.level(i,x)
+    end
+  end)
+  params:add {
+    type='control',
+    id='softloop_fc',
+    name='filter cutoff',
+    controlspec=controlspec.new(20,20000,'exp',0,20000,'Hz'),
+    formatter=Formatters.format_freq,
+    action=function(value)
+      for _,i in ipairs(o.voices) do
+        softcut.post_filter_fc(i,value)
+      end
+    end
+  }
+  params:add {
+    type='control',
+    id='softloop_rc',
+    name='filter rq',
+    controlspec=controlspec.new(0.05,1,'lin',0.01,1,'',0.01/1),
+    action=function(value)
+      for _,i in ipairs(o.voices) do
+        softcut.post_filter_rq(i,value)
+      end
+    end
+  }
+  params:add_option("softloop_voice","sc voice",voice_options,softcut.VOICE_COUNT/2)
+  params:set_action("softloop_voice",function(x)
+    o.voices={x*2-1,x*2}
+    for buf,i in ipairs(o.voices) do
+      softcut.enable(i,1)
+      softcut.buffer(i,buf)
+      softcut.level(i,params:get("softloop_level"))
+      softcut.loop(i,1)
+      softcut.loop_start(i,260)
+      softcut.loop_end(i,261)
+      softcut.position(i,260)
+      softcut.rate(i,1.0)
+      softcut.play(i,1)
+      softcut.pan(i,buf*2-3)
+    end
+  end)
+  params:add_control("softloop_reverse","reverse",controlspec.new(0,100,'lin',1,1,'%',1/100))
+  params:add_control("softloop_jump","jump",controlspec.new(0,100,'lin',1,1,'%',1/100))
+  params:add_control("softloop_hold","hold",controlspec.new(0,100,'lin',1,1,'%',1/100))
   return o
 end
 
 function Softloop:mangle()
   local tempo=clock.get_tempo()
   if self.mangleid~=nil then
-    clock.cancle(self.mangleid)
+    clock.cancel(self.mangleid)
   end
   self.mangleid=clock.run(function()
     while true do
@@ -66,10 +113,11 @@ function Softloop:mangle()
         clock.sleep(1)
       else
         clock.sync(1/16)
-        if math.abs(math.floor(clock.get_beats())-clock.get_beats())<0.02 then
-          if (tempo~=clock.get_tempo()) or (math.random()<0.05) or self.loaded_file then
-            print("syncing")
+        if math.abs(math.floor(clock.get_beats())-clock.get_beats())<0.01 then
+          if (tempo~=clock.get_tempo()) or (math.random()<0.05) or (self.reversed and math.random()<0.3) or self.loaded_file then
+            print("softloop: syncing")
             self.loaded_file=nil
+            self.reversed=nil
             tempo=clock.get_tempo()
             for _,i in ipairs(self.voices) do
               softcut.rate(i,1.0*self.samplerate/48000*clock.get_tempo()/self.bpm)
@@ -77,20 +125,22 @@ function Softloop:mangle()
               softcut.loop_end(i,self.start+self.duration)
             end
             local pos=self.start+self.duration/self.beats*math.random(0,self.beats-1)
-            for _,i in ipairs(self.voices) do
+            for v,i in ipairs(self.voices) do
               softcut.position(i,pos)
+              softcut.pan(i,v*2-3)
             end
           end
-          if math.random()<0.01 then
-            print("reverse")
+          if math.random()<params:get("softloop_reverse")/100 then
+            print("softloop: reverse")
             self:reverse()
+            self.reversed=true
           end
-          if math.random()<0.01 then
-            print("jump")
+          if math.random()<params:get("softloop_jump")/100 then
+            print("softloop: jump")
             self:jump()
           end
-          if math.random()<0.01 then
-            print("jump and hold")
+          if math.random()<params:get("softloop_hold")/100 then
+            print("softloop: hold")
             self:jump_and_hold()
           end
         end
@@ -108,7 +158,7 @@ end
 
 function Softloop:jump_and_hold()
   local pos=self.start+self.duration/self.beats*math.random(0,self.beats-1)
-  local pos_end=pos+self.duration/self.beats*math.random(1,4)
+  local pos_end=pos+self.duration/self.beats*math.random(1,2)
   if pos_end>self.start+self.duration then
     pos_end=self.start+self.duration
   end
@@ -169,13 +219,24 @@ function Softloop:load_file(fname)
   for buf,i in ipairs(self.voices) do
     softcut.enable(i,1)
     softcut.buffer(i,buf)
-    softcut.level(i,0.1)
+    softcut.level(i,params:get("softloop_level"))
     softcut.loop(i,1)
     softcut.loop_start(i,260)
     softcut.loop_end(i,261)
     softcut.position(i,260)
     softcut.rate(i,1.0)
     softcut.play(i,1)
+    softcut.pan(i,buf*2-3)
+
+    softcut.post_filter_dry(i,0.0)
+    softcut.post_filter_lp(i,1.0)
+    softcut.post_filter_rq(i,params:get("softloop_rc"))
+    softcut.post_filter_fc(i,params:get("softloop_fc"))
+
+    softcut.pre_filter_dry(i,1.0)
+    softcut.pre_filter_lp(i,1.0)
+    softcut.pre_filter_rq(i,1.0)
+    softcut.pre_filter_fc(i,20100)
   end
 
   self.fname=fname
@@ -206,6 +267,7 @@ function Softloop:load_file(fname)
   end
   self.playing=true
   self.loaded_file=true
+  self:mangle()
 end
 
 return Softloop
