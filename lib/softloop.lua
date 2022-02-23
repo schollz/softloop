@@ -122,50 +122,57 @@ function Softloop:load_dir(x)
 end
 
 function Softloop:mangle()
-  local tempo=clock.get_tempo()
-  if self.mangleid~=nil then
-    clock.cancel(self.mangleid)
+  -- local tempo=clock.get_tempo()
+  -- if self.mangleid~=nil then
+  --   clock.cancel(self.mangleid)
+  -- end
+  -- self.mangleid=clock.run(function()
+  --   while true do
+  --     if not self.playing then
+  --       clock.sleep(1)
+  --     else
+  --       clock.sync(1/16)
+  --       if math.abs(math.floor(clock.get_beats())-clock.get_beats())<0.01 then
+  -- self:emit()
+  --       end
+  --     end
+  --   end
+  -- end)
+end
+
+function Softloop:emit()
+  if self.samplerate==nil then
+    do return end
   end
-  self.mangleid=clock.run(function()
-    while true do
-      if not self.playing then
-        clock.sleep(1)
-      else
-        clock.sync(1/4)
-        if true or math.abs(math.floor(clock.get_beats())-clock.get_beats())<0.01 then
-          if (tempo~=clock.get_tempo()) or (math.random()<0.05) or (self.reversed and math.random()<0.3) or self.loaded_file then
-            print("softloop: syncing")
-            self.loaded_file=nil
-            self.reversed=nil
-            tempo=clock.get_tempo()
-            for _,i in ipairs(self.voices) do
-              softcut.rate(i,1.0*self.samplerate/48000*clock.get_tempo()/self.bpm)
-              softcut.loop_start(i,self.start)
-              softcut.loop_end(i,self.start+self.duration)
-            end
-            local pos=self.start+self.duration/self.beats*math.random(0,self.beats-1)
-            self:set_pos(pos)
-            for v,i in ipairs(self.voices) do
-              softcut.pan(i,v*2-3)
-            end
-          end
-          if math.random()<params:get("softloop_reverse")/100 then
-            print("softloop: reverse")
-            self:reverse()
-            self.reversed=true
-          end
-          if math.random()<params:get("softloop_jump")/100 then
-            print("softloop: jump")
-            self:jump()
-          end
-          if math.random()<params:get("softloop_hold")/100 then
-            print("softloop: hold")
-            self:jump_and_hold()
-          end
-        end
-      end
+  if (tempo~=clock.get_tempo()) or (math.random()<0.05) or (self.reversed and math.random()<0.3) or self.loaded_file then
+    print("softloop: syncing")
+    self.loaded_file=nil
+    self.reversed=nil
+    tempo=clock.get_tempo()
+    for _,i in ipairs(self.voices) do
+      softcut.rate(i,1.0*self.samplerate/48000*clock.get_tempo()/self.bpm)
+      softcut.loop_start(i,self.start)
+      softcut.loop_end(i,self.start+self.duration)
     end
-  end)
+    local pos=self.start+self.duration/self.beats*math.random(0,self.beats-1)
+    self:set_pos(pos)
+    for v,i in ipairs(self.voices) do
+      softcut.pan(i,v*2-3)
+    end
+  end
+  if math.random()<params:get("softloop_reverse")/100 then
+    print("softloop: reverse")
+    self:reverse()
+    self.reversed=true
+  end
+  if math.random()<params:get("softloop_jump")/100 then
+    print("softloop: jump")
+    self:jump()
+  end
+  if math.random()<params:get("softloop_hold")/100 then
+    print("softloop: hold")
+    self:jump_and_hold()
+  end
 end
 
 function Softloop:set_pos(pos)
