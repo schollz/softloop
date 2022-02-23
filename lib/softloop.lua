@@ -17,36 +17,24 @@ function Softloop:new(o)
   o.clockid=nil
 
   -- TODO: add params
-  params:add_group("SOFTLOOP",10)
-  params:add_file("softloop_file","file",_path.audio)
-  params:set_action("softloop_file",function(x)
-    if x~=_path.audio and x~=nil then
-      o:load_file(x)
-    end
-  end)
-
-  params:add_file("softloop_folder","folder (for rand)",_path.audio)
-  params:set_action("softloop_folder",function(x)
-    if x~=_path.audio and x~=nil then
-      o.dir,_,_=string.match(x,"(.-)([^\\/]-%.?([^%.\\/]*))$")
-      o.files=util.scandir(o.dir)
-      for i,f in ipairs(o.files) do
-        o.files[i]=o.dir..f
-      end
-    end
-  end)
+  params:add_group("SOFTLOOP",9)
   params:add{
     type='binary',
     name="load random",
     id='softloop_loadrand',
     behavior='trigger',
     action=function(v)
-      if o.dir~=nil then
-        print(o.dir)
-        o:load_file()
+      if o.dir~=nil and self.files~=nil and #self.files>0 then
+        params:set("softloop_file",self.files[math.random(#self.files)])
       end
     end
   }
+  params:add_file("softloop_file","load specific",_path.audio)
+  params:set_action("softloop_file",function(x)
+    if x~=_path.audio and x~=nil then
+      o:load_file(x)
+    end
+  end)
   local voice_options={}
   for i=1,softcut.VOICE_COUNT/2 do
     table.insert(voice_options,(i*2-1).."+"..(i*2))
@@ -61,7 +49,7 @@ function Softloop:new(o)
     type='control',
     id='softloop_fc',
     name='filter cutoff',
-    controlspec=controlspec.new(20,20000,'exp',0,20000,'Hz'),
+    controlspec=controlspec.new(20,20000,'exp',50,20000,'Hz',50/20000),
     formatter=Formatters.format_freq,
     action=function(value)
       for _,i in ipairs(o.voices) do
@@ -80,7 +68,7 @@ function Softloop:new(o)
       end
     end
   }
-  params:add_option("softloop_voice","sc voice",voice_options,softcut.VOICE_COUNT/2)
+  params:add_option("softloop_voice","softcut voice",voice_options,softcut.VOICE_COUNT/2)
   params:set_action("softloop_voice",function(x)
     o.voices={x*2-1,x*2}
     for buf,i in ipairs(o.voices) do
@@ -99,7 +87,17 @@ function Softloop:new(o)
   params:add_control("softloop_reverse","reverse",controlspec.new(0,100,'lin',1,1,'%',1/100))
   params:add_control("softloop_jump","jump",controlspec.new(0,100,'lin',1,1,'%',1/100))
   params:add_control("softloop_hold","hold",controlspec.new(0,100,'lin',1,1,'%',1/100))
+
+  self:load_dir("/home/we/dust/audio/softloop/loop_hh_groove__beats16_bpm90.wav")
   return o
+end
+
+function Softloop:load_dir(x)
+  self.dir,_,_=string.match(x,"(.-)([^\\/]-%.?([^%.\\/]*))$")
+  self.files=util.scandir(self.dir)
+  for i,f in ipairs(self.files) do
+    self.files[i]=self.dir..f
+  end
 end
 
 function Softloop:mangle()
@@ -125,8 +123,8 @@ function Softloop:mangle()
               softcut.loop_end(i,self.start+self.duration)
             end
             local pos=self.start+self.duration/self.beats*math.random(0,self.beats-1)
+            self:set_pos(pos)
             for v,i in ipairs(self.voices) do
-              softcut.position(i,pos)
               softcut.pan(i,v*2-3)
             end
           end
@@ -149,11 +147,21 @@ function Softloop:mangle()
   end)
 end
 
+function Softloop:set_pos(pos,offset)
+  softcut.position(self.voices[1],pos)
+  -- softcut.voice_sync(self.voices[1],self.voices[2],math.sin(clock.get_beats()*clock.get_beat_sec())*0.2)
+  clock.run(function()
+    clock.sleep(0.1)
+    softcut.voice_sync(self.voices[1],self.voices[2],offset==nil and 0 or offset)
+  end)
+end
+
 function Softloop:jump()
   local pos=self.start+self.duration/self.beats*math.random(0,self.beats-1)
-  for _,i in ipairs(self.voices) do
-    softcut.position(i,pos)
-  end
+  self:set_pos(pos)
+  -- for _,i in ipairs(self.voices) do
+  --   softcut.position(i,pos)
+  -- end
 end
 
 function Softloop:jump_and_hold()
@@ -165,8 +173,8 @@ function Softloop:jump_and_hold()
   for _,i in ipairs(self.voices) do
     softcut.loop_start(i,pos)
     softcut.loop_end(i,pos_end)
-    softcut.position(i,pos)
   end
+  self:set_pos(pos)
 end
 
 function Softloop:reverse()
@@ -185,8 +193,9 @@ function Softloop:glitch()
     for _,i in ipairs(self.voices) do
       softcut.loop_start(i,start)
       softcut.loop_end(i,start_end)
-      softcut.position(i,start)
+      -- softcut.position(i,start)
     end
+    self:set_pos(start)
     clock.sleep(clock.get_beat_sec()*math.random(1,3)/4)
     for _,i in ipairs(self.voices) do
       softcut.rate_slew_time(i,0)
@@ -214,7 +223,7 @@ function Softloop:load_file(fname)
   if fname==nil then
     fname=self.files[math.random(#self.files)]
   end
-  print("loading "..fname)
+  print("softloop: loading "..fname)
 
   for buf,i in ipairs(self.voices) do
     softcut.enable(i,1)
