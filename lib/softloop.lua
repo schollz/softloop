@@ -96,6 +96,8 @@ function Softloop:new(o)
       softcut.play(i,1)
       softcut.pan(i,buf*2-3)
 
+      softcut.fade_time(i,0.05)
+
       softcut.post_filter_dry(i,0.0)
       softcut.post_filter_lp(i,1.0)
       softcut.post_filter_rq(i,params:get("softloop_rc"))
@@ -122,22 +124,16 @@ function Softloop:load_dir(x)
 end
 
 function Softloop:mangle()
-  -- local tempo=clock.get_tempo()
-  -- if self.mangleid~=nil then
-  --   clock.cancel(self.mangleid)
-  -- end
-  -- self.mangleid=clock.run(function()
-  --   while true do
-  --     if not self.playing then
-  --       clock.sleep(1)
-  --     else
-  --       clock.sync(1/16)
-  --       if math.abs(math.floor(clock.get_beats())-clock.get_beats())<0.01 then
-  -- self:emit()
-  --       end
-  --     end
-  --   end
-  -- end)
+  if self.mangleid~=nil then
+    clock.cancel(self.mangleid)
+  end
+  self.mangleid=clock.run(function()
+    while true do
+      self:jump()
+      clock.sleep(4)
+      -- self:emit()
+    end
+  end)
 end
 
 function Softloop:emit()
@@ -154,34 +150,41 @@ function Softloop:emit()
       softcut.loop_start(i,self.start)
       softcut.loop_end(i,self.start+self.duration)
     end
-    local pos=self.start+self.duration/self.beats*math.random(0,self.beats-1)
-    self:set_pos(pos)
-    for v,i in ipairs(self.voices) do
-      softcut.pan(i,v*2-3)
+    local pos=self.start
+    if next(self.breaks)~=nil then
+      pos=pos+self.breaks[math.random(#self.breaks)]
     end
+    self:set_pos(pos)
   end
-  if math.random()<params:get("softloop_reverse")/100 then
-    print("softloop: reverse")
-    self:reverse()
-    self.reversed=true
-  end
-  if math.random()<params:get("softloop_jump")/100 then
-    print("softloop: jump")
-    self:jump()
-  end
-  if math.random()<params:get("softloop_hold")/100 then
-    print("softloop: hold")
-    self:jump_and_hold()
-  end
+  -- if math.random()<params:get("softloop_reverse")/100 then
+  --   print("softloop: reverse")
+  --   self:reverse()
+  --   self.reversed=true
+  -- end
+  -- if math.random()<params:get("softloop_jump")/100 then
+  --   print("softloop: jump")
+  --   self:jump()
+  -- end
+  -- if math.random()<params:get("softloop_hold")/100 then
+  --   print("softloop: hold")
+  --   self:jump_and_hold()
+  -- end
 end
 
 function Softloop:set_pos(pos)
+  print("softloop: setting to pos "..pos)
   softcut.position(self.voices[1],pos)
-  softcut.voice_sync(self.voices[1],self.voices[2],params:get("softloop_offset"))
+  softcut.position(self.voices[2],pos)
+  softcut.pan(self.voices[1],-1)
+  softcut.pan(self.voices[2],1)
+  -- softcut.voice_sync(self.voices[1],self.voices[2],params:get("softloop_offset"))
 end
 
 function Softloop:jump()
-  local pos=self.start+self.duration/self.beats*math.random(0,self.beats-1)
+  local pos=self.start
+  if next(self.breaks)~=nil then
+    pos=pos+self.breaks[math.random(#self.breaks)]
+  end
   self:set_pos(pos)
 end
 
@@ -263,6 +266,16 @@ function Softloop:load_file(fname)
       self.bpm=tonumber(bpm)
     end
   end
+
+  self.breaks={}
+  norns.system_cmd("aubioonset -i "..fname.." -O hfc -f -M "..(60/self.bpm).." -s -60 -t 0.7 -B 256 -H 256 -T samples",function(x)
+    local bs={}
+    for s in x:gmatch("%S+") do
+      table.insert(bs,tonumber(s)/48000)
+    end
+    self.breaks=bs
+  end)
+
   self.ch,self.samples,self.samplerate=audio.file_info(self.fname)
   self.duration=self.samples/48000.0
   self.start=280-self.duration
@@ -272,9 +285,20 @@ function Softloop:load_file(fname)
   else
     softcut.buffer_read_stereo(self.fname,0,self.start,self.duration)
   end
+
   self.playing=true
   self.loaded_file=true
+
+  local tempo=clock.get_tempo()
+  for _,i in ipairs(self.voices) do
+    softcut.rate(i,1.0*self.samplerate/48000*clock.get_tempo()/self.bpm)
+    softcut.loop_start(i,self.start)
+    softcut.loop_end(i,self.start+self.duration)
+  end
+  self:set_pos(self.start)
+
   self:mangle()
+
 end
 
 return Softloop
