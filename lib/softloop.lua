@@ -74,9 +74,9 @@ function Softloop:new(o)
       end
     end
   }
-  params:add_control("softloop_reverse","reverse",controlspec.new(0,100,'lin',1,1,'%',1/100))
-  params:add_control("softloop_jump","jump",controlspec.new(0,100,'lin',1,1,'%',1/100))
-  params:add_control("softloop_hold","hold",controlspec.new(0,100,'lin',1,1,'%',1/100))
+  params:add_control("softloop_reverse","reverse",controlspec.new(0,100,'lin',1,2,'%',1/100))
+  params:add_control("softloop_jump","jump",controlspec.new(0,100,'lin',1,15,'%',1/100))
+  params:add_control("softloop_hold","hold",controlspec.new(0,100,'lin',1,5,'%',1/100))
   params:add_control("softloop_offset","l/r offset",controlspec.new(0,0.2,'lin',0.01,0,'s',0.01/2))
   params:set_action("softloop_offset",function(x)
     softcut.voice_sync(o.voices[1],o.voices[2],x)
@@ -186,9 +186,9 @@ function Softloop:set_pos(pos)
   end
   softcut.position(self.voices[1],pos)
   softcut.position(self.voices[2],pos)
+  softcut.voice_sync(self.voices[1],self.voices[2],params:get("softloop_offset"))
   softcut.pan(self.voices[1],1)
   softcut.pan(self.voices[2],-1)
-  -- softcut.voice_sync(self.voices[1],self.voices[2],params:get("softloop_offset"))
 end
 
 function Softloop:jump()
@@ -288,7 +288,7 @@ function Softloop:load_file(fname)
   end
 
   self.breaks={}
-  norns.system_cmd("aubioonset -i "..fname.." -O hfc -f -M "..(60/self.bpm/4).." -s -60 -t 0.6 -B 128 -H 128 -T samples",function(x)
+  norns.system_cmd("/home/we/dust/code/softloop/lib/aubioonset -i "..fname.." -O hfc -f -M "..(60/self.bpm/8).." -s -60 -t 0.6 -B 128 -H 128 -T samples",function(x)
     local bs={}
     local bs_beat={}
     for s in x:gmatch("%S+") do
